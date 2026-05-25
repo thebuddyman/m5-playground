@@ -28,9 +28,18 @@ SPEED_GAIN = 18.0            # car drift per g of tilt
 MAX_VX = 7
 DEADZONE = 0.08
 
-# Difficulty (start values)
-OBS_SPEED_0 = 3
-OBS_SPAWN_0 = 18             # frames between spawns
+# Difficulty levels: advance with score.
+#   speed       - obstacle scroll speed (px/frame)
+#   spawn       - frames between spawn events
+#   double_p    - probability a spawn event drops 2 obstacles (across distinct
+#                 lanes out of 3, so a lane is always free)
+#   until_score - top score for this level; you graduate to the next at +1
+LEVELS = [
+  {"name": "EASY",   "speed": 2, "spawn": 28, "double_p": 0.0,  "until_score": 8},
+  {"name": "NORMAL", "speed": 3, "spawn": 22, "double_p": 0.20, "until_score": 20},
+  {"name": "HARD",   "speed": 5, "spawn": 14, "double_p": 0.55, "until_score": 36},
+  {"name": "EXPERT", "speed": 7, "spawn": 10, "double_p": 0.80, "until_score": 10**9},
+]
 
 # Colors
 COLOR_BG       = 0x202020    # off-road
@@ -68,14 +77,11 @@ def reset_game():
   M5.Lcd.fillScreen(COLOR_BG)
 
 
-def current_speed():
-  # Ramp up 1 px every 8 points, capped.
-  return min(OBS_SPEED_0 + score // 8, 9)
-
-
-def current_spawn_interval():
-  # Spawn more often as score grows.
-  return max(OBS_SPAWN_0 - score // 6, 6)
+def current_level():
+  for lvl in LEVELS:
+    if score <= lvl["until_score"]:
+      return lvl
+  return LEVELS[-1]
 
 
 def draw_road():
@@ -120,16 +126,21 @@ def draw_score():
   M5.Lcd.setTextSize(1)
   M5.Lcd.setTextColor(COLOR_TEXT, COLOR_ROAD)
   M5.Lcd.drawString(str(score), ROAD_LEFT + 3, 3)
+  name = current_level()["name"]
+  M5.Lcd.drawString(name, ROAD_RIGHT - M5.Lcd.textWidth(name) - 3, 3)
 
 
-def spawn_obstacle():
-  # 3 lane slots inside the road.
-  lanes = 3
-  lane_w = ROAD_W // lanes
-  lane = random.randint(0, lanes - 1)
-  x = ROAD_LEFT + lane * lane_w + (lane_w - OBS_W) // 2
-  color = random.choice(OBS_COLORS)
-  obstacles.append([x, -OBS_H, color])
+def spawn_obstacles(count):
+  # 3 lane slots inside the road. Pick `count` distinct lanes so there's
+  # always at least one free lane (count is capped at 2).
+  lanes_n = 3
+  lane_w = ROAD_W // lanes_n
+  count = max(1, min(count, lanes_n - 1))
+  picks = random.sample(range(lanes_n), count)
+  for lane in picks:
+    x = ROAD_LEFT + lane * lane_w + (lane_w - OBS_W) // 2
+    color = random.choice(OBS_COLORS)
+    obstacles.append([x, -OBS_H, color])
 
 
 def collides(ax, ay, aw, ah, bx, by, bw, bh):
@@ -169,6 +180,9 @@ def show_game_over():
   M5.Lcd.drawString(s, (SCREEN_W - M5.Lcd.textWidth(s)) // 2, 75)
 
   M5.Lcd.setTextSize(1)
+  lvl_str = "Level: " + current_level()["name"]
+  M5.Lcd.drawString(lvl_str, (SCREEN_W - M5.Lcd.textWidth(lvl_str)) // 2, 140)
+
   prompt = "Press A to play again"
   M5.Lcd.drawString(prompt, (SCREEN_W - M5.Lcd.textWidth(prompt)) // 2, 170)
 
@@ -198,9 +212,9 @@ def loop():
       game_started = False
     return
 
-  # --- Read tilt ---
+  # --- Read tilt --- (negate so tilt-left moves car left)
   accel = M5.Imu.getAccel()
-  ax = accel[0]
+  ax = -accel[0]
   if abs(ax) < DEADZONE:
     ax = 0.0
 
@@ -216,13 +230,16 @@ def loop():
   elif car_x > ROAD_RIGHT - CAR_W:
     car_x = ROAD_RIGHT - CAR_W
 
+  lvl = current_level()
+
   # --- Spawn ---
   if frame >= next_spawn:
-    spawn_obstacle()
-    next_spawn = frame + current_spawn_interval()
+    count = 2 if random.random() < lvl["double_p"] else 1
+    spawn_obstacles(count)
+    next_spawn = frame + lvl["spawn"]
 
   # --- Move obstacles ---
-  speed = current_speed()
+  speed = lvl["speed"]
   alive = []
   for ob in obstacles:
     ob[1] += speed

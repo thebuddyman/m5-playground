@@ -136,10 +136,14 @@ def spawn_obstacles(count):
   lanes_n = 3
   lane_w = ROAD_W // lanes_n
   count = max(1, min(count, lanes_n - 1))
-  picks = random.sample(range(lanes_n), count)
+  pool = [0, 1, 2]
+  picks = []
+  for _ in range(count):
+    i = random.randint(0, len(pool) - 1)
+    picks.append(pool.pop(i))
   for lane in picks:
     x = ROAD_LEFT + lane * lane_w + (lane_w - OBS_W) // 2
-    color = random.choice(OBS_COLORS)
+    color = OBS_COLORS[random.randint(0, len(OBS_COLORS) - 1)]
     obstacles.append([x, -OBS_H, color])
 
 
@@ -234,7 +238,7 @@ def loop():
 
   # --- Spawn ---
   if frame >= next_spawn:
-    count = 2 if random.random() < lvl["double_p"] else 1
+    count = 2 if random.randint(0, 99) < int(lvl["double_p"] * 100) else 1
     spawn_obstacles(count)
     next_spawn = frame + lvl["spawn"]
 
